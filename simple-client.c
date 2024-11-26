@@ -13,47 +13,35 @@ void error(const char *msg) {
 }
 
 int main(int argc, char *argv[]) {
-    int sockfd, portno, n;
-    struct sockaddr_in serv_addr;
-    struct hostent *server;
+    
 
-    char buffer[256];
-    if (argc < 3) {
-       fprintf(stderr,"usage %s hostname port\n", argv[0]);
-       exit(0);
-    }
-    portno = atoi(argv[2]);
-    sockfd = socket(AF_INET, SOCK_STREAM, 0);
-    if (sockfd < 0) 
-        error("ERROR opening socket");
+    //create a socket 
+    int network_socket = socket(AF_INET, SOCK_STREAM, 0);
 
-    server = gethostbyname(argv[1]);
-    if (server == NULL) {
-        fprintf(stderr,"ERROR, no such host\n");
-        exit(0);
+    //specify an address for the socket
+    struct sockaddr_in server_address;
+    server_address.sin_family = AF_INET;
+    server_address.sin_port = htons(8080);
+    server_address.sin_addr.s_addr = INADDR_ANY;// shortcut for IP address: 0.0.0.0 
+
+    int connection_status = connect(network_socket, (struct sockaddr*)&server_address, sizeof(server_address));
+
+    // check for connection
+    if (connection_status == -1) {
+        error("There was an error making a connection to the remote socket\n");
     }
 
-    memset((char *) &serv_addr, 0, sizeof(serv_addr));
-    serv_addr.sin_family = AF_INET;
-    memcpy((char *)&serv_addr.sin_addr.s_addr, (char *)server->h_addr, server->h_length);
-    serv_addr.sin_port = htons(portno);
+    // receive data from the server
 
-    if (connect(sockfd,(struct sockaddr *) &serv_addr,sizeof(serv_addr)) < 0) 
-        error("ERROR connecting");
+    char server_response[256];
+    //recv = receive
+    recv(network_socket, &server_response, sizeof(server_response), 0);
 
-    printf("Please enter the message: ");
-    memset(buffer, 0, 256);
-    fgets(buffer, 255, stdin);
+    //print out the server's response
+    printf("The server sent the data: %s\n", server_response);
 
-    n = write(sockfd, buffer, strlen(buffer));
-    if (n < 0) 
-         error("ERROR writing to socket");
 
-    memset(buffer, 0, 256);
-    n = read(sockfd, buffer, 255);
-    if (n < 0) 
-         error("ERROR reading from socket");
-    printf("%s\n", buffer);
-    close(sockfd);
+    //close the socket
+    close(network_socket);
     return 0;
 }

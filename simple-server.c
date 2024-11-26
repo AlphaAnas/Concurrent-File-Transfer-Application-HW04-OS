@@ -12,44 +12,36 @@ void error(const char *msg) {
 }
 
 int main(int argc, char *argv[]) {
-    int sockfd, newsockfd, portno;
-    socklen_t clilen;
-    char buffer[256];
-    struct sockaddr_in serv_addr, cli_addr;
-    int n;
+    
 
-    if (argc < 2) {
-        fprintf(stderr,"ERROR, no port provided\n");
-        exit(1);
+    char server_message[256] = "You have reached the server!";
+    //create a socket
+    int server_socket = socket(AF_INET, SOCK_STREAM, 0);
+    if (server_socket < 0) {
+        error("Error opening socket");
     }
 
-    sockfd = socket(AF_INET, SOCK_STREAM, 0);
-    if (sockfd < 0) 
-       error("ERROR opening socket");
+    //specify an address for the socket
+    struct sockaddr_in server_address;
+    server_address.sin_family = AF_INET;
+    server_address.sin_port = htons(8080);
+    server_address.sin_addr.s_addr = INADDR_ANY;// shortcut for IP address:
 
-    memset((char *) &serv_addr, 0, sizeof(serv_addr));
-    portno = atoi(argv[1]);
-    serv_addr.sin_family = AF_INET;
-    serv_addr.sin_addr.s_addr = INADDR_ANY;
-    serv_addr.sin_port = htons(portno);
+    //bind the socket to our specified IP and port
+    bind(server_socket, (struct sockaddr *) &server_address, sizeof(server_address));
 
-    if (bind(sockfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0) 
-              error("ERROR on binding");
+    listen(server_socket, 5); // 5 is the number of connections that can be waiting while the server is busy
 
-    listen(sockfd,5);
-    clilen = sizeof(cli_addr);
-    newsockfd = accept(sockfd, (struct sockaddr *) &cli_addr, &clilen);
-    if (newsockfd < 0) 
-          error("ERROR on accept");
+    int client_socket;           
+    client_socket = accept(server_socket, NULL, NULL);
 
-    memset(buffer, 0, 256);
-    n = read(newsockfd, buffer, 255);
-    if (n < 0) error("ERROR reading from socket");
-    printf("Here is the message: %s\n", buffer);
 
-    n = write(newsockfd, "I got your message", 18);
-    if (n < 0) error("ERROR writing to socket");
-    close(newsockfd);
-    close(sockfd);
-    return 0; 
+    //send the message
+    send(client_socket, server_message, sizeof(server_message), 0);
+
+
+    //close the socket
+    close(server_socket);
+
+    return 0;
 }
