@@ -15,9 +15,11 @@ typedef struct {
     long end;
 } ThreadData;
 
-void send_segment_data(void *arg){
+
+void* send_segment_data(void *arg){
 
     ThreadData *data = (ThreadData*) arg;
+
     fseek(data->file, data->start, SEEK_SET); // set the file pointer to the start of the segment
 
     long remaining_bytes = data->end - data->start;
@@ -41,7 +43,7 @@ void send_segment_data(void *arg){
 
     }
 
-    fclose(data->client_socket);
+    fclose(data->file);
     free(data);
     
   
@@ -57,21 +59,21 @@ int main(int argc, char *argv[]) {
     
     
     
-    if (argc < 2) {
-        fprintf(stderr, "Usage: %s <port>\n", argv[0]);
-        return 1;
-    }
+    // if (argc < 2) {
+    //     fprintf(stderr, "Usage: %s <port>\n", argv[0]);
+    //     return 1;
+    // }
 
     int server_socket, port_no;
 
-    port_no = atoi(argv[1]);
+    // port_no = atoi(argv[1]);
     struct sockaddr_in client_address;
 
     char server_message[256] = "You have reached the server!";
     //create a socket
-    int server_socket = socket(AF_INET, SOCK_STREAM, 0);
+    server_socket = socket(AF_INET, SOCK_STREAM, 0);
     if (server_socket < 0) {
-        error("Error opening socket");
+        perror("Error opening socket");
     }
 
     //specify an address for the socket
@@ -90,16 +92,17 @@ int main(int argc, char *argv[]) {
         socklen_t client_len = sizeof(client_address);
         int client_socket = accept(server_socket, (struct sockaddr *)&client_address, &client_len);
         if (client_socket < 0) {
-            error("Error accepting connection");
+            perror("Error accepting connection");
         }
 
 
             // receive the signal from client of the name of the file and no of threads to break into
         printf("Client connected.\n");
         char file_name[256];
-        int num_threads;
-        recv(client_socket, file_name, sizeof(file_name), 0);
-        recv(client_socket, &num_threads, sizeof(num_threads), 0);
+        int num_threads=0;
+        int temp = num_threads * sizeof(int);
+        recv(client_socket, file_name, sizeof(file_name), 0); // receive the file name from the client
+        recv(client_socket, &num_threads, sizeof(num_threads), 0); // receive the number of threads from the client
         printf("File name: %s\n", file_name);
         printf("Number of threads: %d\n", num_threads);
         FILE *file = fopen(file_name, "rb");
@@ -110,8 +113,6 @@ int main(int argc, char *argv[]) {
         }
 
         
-        // long segment_size = file_size / num_threads;
-
 
         //getting the length of the file (https://stackoverflow.com/questions/238603/how-can-i-get-a-files-size-in-c)
         fseek(file, 0L, SEEK_END); // OL is long int
@@ -124,7 +125,7 @@ int main(int argc, char *argv[]) {
             data->client_socket = client_socket;
             data->file = file;
             data->start = i * segment_size;
-            data->end = (i == num_threads - 1) ? size : (i + 1) * segment_size;
+            data->end = (i == num_threads - 1) ? size : (i + 1) * segment_size; // if it is the last segment, then the end is the size of the file
 
             pthread_t thread;
             pthread_create(&thread, NULL, send_segment_data, data);
@@ -137,6 +138,7 @@ int main(int argc, char *argv[]) {
 
         // Close the client socket after sending the message
         close(client_socket);
+        fclose(file);
     }
 
     
