@@ -12,7 +12,7 @@ struct filedata_t {
   int e_index;
   int num_threads;
   int e_index_total; // Total end index (file size) for full reassembly
-} filedata;
+};
 
 
 void *receive_file(void *arg) {
@@ -29,15 +29,16 @@ void *receive_file(void *arg) {
     }
 
     // Open the file for writing (create the file if it doesn't exist)
-    fp = fopen("received_file.txt", "ab");  // "ab" mode to append data to the file
+    char new_filename[1024];
+    snprintf(new_filename, sizeof(new_filename), "new_%s", filedata->filename);
+    fp = fopen(new_filename, "ab");  // "ab" mode to append data to the file
     if (fp == NULL) {
         perror("Error opening file for receiving");
         free(buffer);
         return NULL;
     }
-    printf("created file named received_file.txt \n");
 
-    int bytes_to_receive = filedata->e_index - filedata->s_index;
+    long bytes_to_receive = filedata->e_index - filedata->s_index;
 
     // Seek to the correct position where the segment should be written
     fseek(fp, filedata->s_index, SEEK_SET);
@@ -74,11 +75,11 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "Usage: %s <file_name> <num_threads>\n", argv[0]);
         exit(1);
     }
+    struct filedata_t filedata;
 
     // save file name and number of threads
     strncpy(filedata.filename, argv[1], sizeof(filedata.filename));
     filedata.num_threads = atoi(argv[2]);
-    filedata.e_index_total = 1024  * 490;  // Example total file size (490KB)
 
     if (filedata.num_threads <= 0) {
         fprintf(stderr, "Error: Number of threads must be positive.\n");
@@ -114,27 +115,34 @@ int main(int argc, char *argv[]) {
     // Send file and thread request to the server
     send(sockfd, &filedata, sizeof(filedata), 0);
 
+    // Receive total file size from the server
+    recv(sockfd, &filedata.e_index_total, sizeof(filedata.e_index_total), 0);
+    printf("Total file size received: %ld bytes\n", filedata.e_index_total);
 
     // Create threads for receiving file segments dynamically
     pthread_t threads[filedata.num_threads];
     struct filedata_t segments[filedata.num_threads];
 
     // Calculate dynamic segment sizes and indexes
-    int segment_size = filedata.e_index_total / filedata.num_threads;
+    long segment_size = filedata.e_index_total / filedata.num_threads;
+    if (filedata.e_index_total % filedata.num_threads != 0) {
+        segment_size++; // Ensure the last thread gets the remaining data if the size is not divisible
+    }
     for (int i = 0; i < filedata.num_threads; i++) {
+        printf("client.c : This is Thread No.: %d\n", i +1);
         segments[i].new_sock = sockfd;
-        strcpy(segments[i].filename, filedata.filename);
-        // segments[i].filename = filedata.filename;
+        strncpy(segments[i].filename, filedata.filename, sizeof(segments[i].filename));
         segments[i].num_threads = filedata.num_threads;
-        segments[i].e_index = (i + 1) * segment_size;
         segments[i].s_index = i * segment_size;
+        segments[i].e_index = (i == filedata.num_threads - 1) ? filedata.e_index_total : (i + 1) * segment_size;
+        segments[i].e_index_total = filedata.e_index_total;
 
-        // Ensure the last thread gets the remaining bytes if file size is not perfectly divisible
-        if (i == filedata.num_threads - 1) {
-            segments[i].e_index = filedata.e_index_total;
-        }
+        // // Ensure the last thread gets the remaining bytes if file size is not perfectly divisible
+        // if (i == filedata.num_threads - 1) {
+        //     segments[i].e_index = filedata.e_index_total;
+        // }
 
-        pthread_create(&threads[i], NULL, receive_file, &segments[i]);
+        pthread_create(&threads[i], NULL, receive_file, (void *)&segments[i]);
     }
 
     for (int i = 0; i < filedata.num_threads; i++) {
@@ -145,7 +153,7 @@ int main(int argc, char *argv[]) {
 
 
 
-
+    printf("File received and saved successfully.\n");
     // Close the connection
     printf("Closing the connection.\n");
     close(sockfd);

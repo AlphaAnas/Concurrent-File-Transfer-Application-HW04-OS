@@ -12,7 +12,7 @@ struct filedata_t {
   int s_index;
   int e_index;
   int num_threads;
-} filedata;
+};
 
 void *send_file(void *arg) {
 
@@ -22,13 +22,16 @@ void *send_file(void *arg) {
     char buffer[1024];
 
     
-    // Opening file for writing
+    // Opening file for reading
     fp = fopen(filedata->filename, "rb"); 
     if (fp == NULL ) {
         perror("Error opening fp file");
         return;
     }
-    int bytes_to_read = filedata->e_index - filedata->s_index;
+    // Seek to the correct position where the segment should be written
+    fseek(fp, filedata->s_index, SEEK_SET);
+    long bytes_to_read = filedata->e_index - filedata->s_index;
+
     while (bytes_to_read > 0) {
         bytes_read = fread(buffer, 1, 1024, fp);
         if (bytes_read <= 0) {
@@ -50,6 +53,7 @@ int main(int argc, char *argv[]) {
     struct sockaddr_in server_address, new_addr;
     socklen_t address_size;
     char buffer[1024];
+    struct  filedata_t filedata;
 
     // Create socket
     server_socket = socket(AF_INET, SOCK_STREAM, 0);
@@ -92,17 +96,31 @@ int main(int argc, char *argv[]) {
 
 
     //find the start and end positions of the file
-    FILE *file = fopen(filedata.filename, "r");
+    FILE *file = fopen(filedata.filename, "rb");
       //getting the length of the file (https://stackoverflow.com/questions/238603/how-can-i-get-a-files-size-in-c)
     fseek(file, 0L, SEEK_END); // OL is long int
     long int file_size = ftell(file);
     rewind(file); // go back to the beginning of the file
-    long int segment_size = file_size / filedata.num_threads;
+    fclose(file);
+
+
+    //send the file size to the client
+    send(new_sock, &file_size, sizeof(file_size), 0);
+
+
+    long segment_size = file_size / filedata.num_threads;
+
+    if (file_size % filedata.num_threads != 0) {
+
+        segment_size++; // Ensure the last thread gets the remaining data
+
+    }
 
     pthread_t threads[filedata.num_threads];
     struct filedata_t segments[filedata.num_threads];
 
     for (int i = 0; i < filedata.num_threads; i++) {
+        printf("SERVER.C : This is Thread No.: %d\n", i +1);
         strcpy(segments[i].filename, filedata.filename);
         // segments[i].filename = filedata.filename;
         segments[i].num_threads = filedata.num_threads;
