@@ -1,163 +1,114 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <unistd.h>
 #include <string.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netdb.h>
 #include <arpa/inet.h>
+#include <ctype.h>
+#include <unistd.h>
+#include <errno.h>
 #include <pthread.h>
 
-struct filedata_t {
-  char filename[1024];
-  int new_sock;
-  int s_index;
-  int e_index;
-  int num_threads;
-  int e_index_total; // Total end index (file size) for full reassembly
-};
+#define KB_SIZE 1024  // Buffer size for receiving data
+#define DEFAULT_PORT 8080
 
+// Function prototypes
+int connect_to_server(const char *ip, int port);
+void receive_file(int sockfd, const char *output_filename);
 
-void *receive_file(void *arg) {
-    struct filedata_t *filedata = (struct filedata_t *)arg;
-    int bytes_received;
-    FILE *fp;
-    char *buffer;
-    
-    // Dynamically allocate memory for the buffer
-    buffer = (char *)malloc(1024 * sizeof(char));
-    if (buffer == NULL) {
-        perror("Error allocating memory for buffer");
-        return NULL;
+// Main Function
+int main(int argc, char *argv[]) {
+    if (argc < 2) {
+        fprintf(stderr, "Usage: %s <server_ip> [port]\n", argv[0]);
+        exit(EXIT_FAILURE);
     }
 
-    // Open the file for writing (create the file if it doesn't exist)
-    char new_filename[1024];
-    snprintf(new_filename, sizeof(new_filename), "new_%s", filedata->filename);
-    fp = fopen(new_filename, "ab");  // "ab" mode to append data to the file
-    if (fp == NULL) {
-        perror("Error opening file for receiving");
-        free(buffer);
-        return NULL;
-    }
+    const char *server_ip = argv[1];
+    int port = (argc >= 3) ? atoi(argv[2]) : DEFAULT_PORT;
 
-    long bytes_to_receive = filedata->e_index - filedata->s_index;
+    // Connect to the server
+    int sockfd = connect_to_server(server_ip, port);
 
-    // Seek to the correct position where the segment should be written
-    fseek(fp, filedata->s_index, SEEK_SET);
+    // Receive the file
+    receive_file(sockfd, "parents_video_out.mp4");
 
-    while (bytes_to_receive > 0) {
-        bytes_received = recv(filedata->new_sock, buffer, 1024, 0);  // Receive data into buffer
+    // Close the connection
+    close(sockfd);
 
-        if (bytes_received <= 0) {
-            if (bytes_received == 0) {
-                printf("[+]Connection closed by the server.\n");
-            } else {
-                perror("[-]Error in receiving data");
-            }
-            break;
-        }
-
-        // Write the received data to the file at the correct position
-        fwrite(buffer, 1, bytes_received, fp);
-
-        // Decrease the remaining bytes to receive
-        bytes_to_receive -= bytes_received;
-    }
-
-    // Close the file and free the buffer memory
-    fclose(fp);
-    free(buffer);
-
-    return NULL;
+    return 0;
 }
 
-
-int main(int argc, char *argv[]) {
-    if (argc < 3) {
-        fprintf(stderr, "Usage: %s <file_name> <num_threads>\n", argv[0]);
-        exit(1);
-    }
-    struct filedata_t filedata;
-
-    // save file name and number of threads
-    strncpy(filedata.filename, argv[1], sizeof(filedata.filename));
-    filedata.num_threads = atoi(argv[2]);
-
-    if (filedata.num_threads <= 0) {
-        fprintf(stderr, "Error: Number of threads must be positive.\n");
-        exit(1);
-    }
-
-    char *ip = "127.0.0.1";  // Default IP address
-    int port = 8080;
-    int connection_status;
-
-    // Create socket
-    int sockfd = socket(AF_INET, SOCK_STREAM, 0);
-    if (sockfd < 0) {
-        perror("Error in creating socket");
-        exit(1);
-    }
-
+// Connects to the server and returns the socket file descriptor
+int connect_to_server(const char *ip, int port) {
+    int sockfd;
     struct sockaddr_in server_address;
+
+    sockfd = socket(AF_INET, SOCK_STREAM, 0);
+    if (sockfd < 0) {
+        perror("Socket creation failed");
+        exit(EXIT_FAILURE);
+    }
 
     server_address.sin_family = AF_INET;
     server_address.sin_port = htons(port);
     server_address.sin_addr.s_addr = inet_addr(ip);
 
-    // Connect to the server
-    connection_status = connect(sockfd, (struct sockaddr*)&server_address, sizeof(server_address));
-    if (connection_status == -1) {
-        perror("Error in connecting to socket");
-        exit(1);
+    if (connect(sockfd, (struct sockaddr *)&server_address, sizeof(server_address)) < 0) {
+        perror("Connection to server failed");
+        close(sockfd);
+        exit(EXIT_FAILURE);
     }
 
-    printf("Connected to Server.\n");
-
-    // Send file and thread request to the server
-    send(sockfd, &filedata, sizeof(filedata), 0);
-
-    // Receive total file size from the server
-    recv(sockfd, &filedata.e_index_total, sizeof(filedata.e_index_total), 0);
-    printf("Total file size received: %ld bytes\n", filedata.e_index_total);
-
-    // Create threads for receiving file segments dynamically
-    pthread_t threads[filedata.num_threads];
-    struct filedata_t segments[filedata.num_threads];
-
-    // Calculate dynamic segment sizes and indexes
-    long segment_size = filedata.e_index_total / filedata.num_threads;
-    if (filedata.e_index_total % filedata.num_threads != 0) {
-        segment_size++; // Ensure the last thread gets the remaining data if the size is not divisible
-    }
-    for (int i = 0; i < filedata.num_threads; i++) {
-        printf("client.c : This is Thread No.: %d\n", i +1);
-        segments[i].new_sock = sockfd;
-        strncpy(segments[i].filename, filedata.filename, sizeof(segments[i].filename));
-        segments[i].num_threads = filedata.num_threads;
-        segments[i].s_index = i * segment_size;
-        segments[i].e_index = (i == filedata.num_threads - 1) ? filedata.e_index_total : (i + 1) * segment_size;
-        segments[i].e_index_total = filedata.e_index_total;
-
-        // // Ensure the last thread gets the remaining bytes if file size is not perfectly divisible
-        // if (i == filedata.num_threads - 1) {
-        //     segments[i].e_index = filedata.e_index_total;
-        // }
-
-        pthread_create(&threads[i], NULL, receive_file, (void *)&segments[i]);
-    }
-
-    for (int i = 0; i < filedata.num_threads; i++) {
-        
-        pthread_join(threads[i], NULL);
-    }
-
-
-
-
-    printf("File received and saved successfully.\n");
-    // Close the connection
-    printf("Closing the connection.\n");
-    close(sockfd);
-
-
-    return 0;
+    printf("Connected to server at %s:%d\n", ip, port);
+    return sockfd;
 }
+
+// Receives a file from the server and saves it to the given output filename
+void receive_file(int sockfd, const char *output_filename) {
+    char buffer[KB_SIZE];
+    long file_size = 0;
+    long bytes_received = 0;
+
+    // Receive the file size from the server
+    if (recv(sockfd, &file_size, sizeof(file_size), 0) <= 0) {
+        perror("Error receiving file size");
+        exit(EXIT_FAILURE);
+    }
+
+    printf("Receiving file of size: %ld bytes\n", file_size);
+
+    // Open the file for writing
+    FILE *fp = fopen(output_filename, "wb");
+    if (!fp) {
+        perror("Error opening output file");
+        exit(EXIT_FAILURE);
+    }
+
+    // Receive the file data in chunks
+    while (bytes_received < file_size) {
+        int chunk_size = recv(sockfd, buffer, KB_SIZE, 0);
+        if (chunk_size < 0) {
+            perror("Error receiving file data");
+            fclose(fp);
+            exit(EXIT_FAILURE);
+        } else if (chunk_size == 0) {
+            printf("Connection closed by server\n");
+            break;
+        }
+
+        fwrite(buffer, 1, chunk_size, fp);
+        bytes_received += chunk_size;
+
+        printf("Progress: %ld/%ld bytes received\n", bytes_received, file_size);
+    }
+
+    fclose(fp);
+
+    if (bytes_received == file_size) {
+        printf("File received successfully and saved as %s\n", output_filename);
+    } else {
+        fprintf(stderr, "Warning: Incomplete file received (%ld/%ld bytes)\n", bytes_received, file_size);
+    }
+}
+
