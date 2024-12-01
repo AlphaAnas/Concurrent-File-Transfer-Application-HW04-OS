@@ -8,8 +8,8 @@
 #include <arpa/inet.h>
 #include <unistd.h>
 
-#define KB_SIZE 1024
-#define DEFAULT_PORT 8080
+#define KB_SIZE 1024 // 1 KB
+#define DEFAULT_PORT 8080 // Default port to connect to
 #define MAX_FILENAME 256
 
 int connect_to_server(const char *ip, int port);
@@ -21,7 +21,6 @@ int main(int argc, char *argv[]) {
     const char *server_ip = "127.0.0.1";
     int port = DEFAULT_PORT;
 
-    // char filename[MAX_FILENAME];
     int num_threads;
 
     if (argc < 3) {
@@ -56,7 +55,7 @@ int connect_to_server(const char *ip, int port) {
         exit(EXIT_FAILURE);
     }
 
-    server_address.sin_family = AF_INET;
+    server_address.sin_family = AF_INET; // short for IPv4
     server_address.sin_port = htons(port);
     server_address.sin_addr.s_addr = inet_addr(ip);
 
@@ -115,7 +114,9 @@ void receive_file(int sockfd, const char *output_filename, const char* old_filen
     compute_sha256(old_filename, local_hash);
 
     // Compare the hashes
-    if (memcmp(server_hash, local_hash, SHA256_DIGEST_LENGTH) == 0) {
+    //     int memcmp(const void *__s1, const void *__s2, size_t __n)
+    // Compare N bytes of S1 and S2.
+    if (memcmp(server_hash, local_hash, SHA256_DIGEST_LENGTH) == 0) { // 
         printf("File integrity verified: Hash matches.\n");
     } else {
         printf("File integrity check failed: Hash mismatch.\n");

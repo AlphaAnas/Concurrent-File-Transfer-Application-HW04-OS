@@ -10,8 +10,8 @@
 #include <pthread.h>
 #include <openssl/sha.h> 
 
-#define KB_SIZE 1024    // Chunk size
-#define BACKLOG 10      // Max queued connections
+#define KB_SIZE 1024    // Chunk to send the file into 
+#define BACKLOG 10      // Max queued connections - more detail when i am using it
 #define MAX_FILENAME 256
 
 struct client_data_t {
@@ -22,6 +22,8 @@ void *handle_client(void *arg);
 void compute_sha256(const char *filename, unsigned char *hash_output);
 
 int main() {
+
+       //specify an address for the socket
     int server_socket;
     struct sockaddr_in server_address, client_address;
     socklen_t client_address_len = sizeof(client_address);
@@ -42,7 +44,7 @@ int main() {
         exit(EXIT_FAILURE);
     }
 
-    if (listen(server_socket, BACKLOG) < 0) {
+    if (listen(server_socket, BACKLOG) < 0) { // BACKLOG is the number of connections that can be waiting while the server is busy
         perror("Listening failed");
         close(server_socket);
         exit(EXIT_FAILURE);
@@ -64,7 +66,7 @@ int main() {
         client_data->client_socket = client_socket;
 
         pthread_create(&thread, NULL, handle_client, client_data);
-        pthread_detach(thread);  // No need to join; free resources automatically
+        pthread_detach(thread);  
     }
 
     close(server_socket);
@@ -98,7 +100,7 @@ void *handle_client(void *arg) {
     free(client_data);
 
     char filename[MAX_FILENAME];
-    memset(filename, 0, MAX_FILENAME);
+    memset(filename, 0, MAX_FILENAME); //Set N bytes of S to C. memset(S,C,N)
 
     // Receive the filename from the client
     if (recv(client_socket, filename, MAX_FILENAME, 0) <= 0) {
@@ -119,9 +121,9 @@ void *handle_client(void *arg) {
         pthread_exit(NULL);
     }
 
-    // Get file size
-    fseek(file, 0, SEEK_END);
-    long file_size = ftell(file);
+       //getting the length of the file (https://stackoverflow.com/questions/238603/how-can-i-get-a-files-size-in-c)
+    fseek(file, 0, SEEK_END); // set the file pointer to the start of the segment
+    long file_size = ftell(file); // go back to the beginning of the file
     rewind(file);
 
     // Allocate memory for file
@@ -159,7 +161,7 @@ void *handle_client(void *arg) {
     // Send file content to client
     long bytes_sent = 0;
     while (bytes_sent < file_size) {
-        long chunk_size = (file_size - bytes_sent) < KB_SIZE ? (file_size - bytes_sent) : KB_SIZE;
+        long chunk_size = (file_size - bytes_sent) < KB_SIZE ? (file_size - bytes_sent) : KB_SIZE; // if the remaining bytes are less than 1024, then send the remaining bytes
         if (send(client_socket, file_buffer + bytes_sent, chunk_size, 0) < 0) {
             perror("Error sending file data");
             break;
