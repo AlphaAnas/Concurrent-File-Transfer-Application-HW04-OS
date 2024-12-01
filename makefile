@@ -4,6 +4,7 @@ client: client.c
 	gcc -o client client.c
 clean:
 	rm -f server client
+	rm -f out_*
 
 all: server client
 	

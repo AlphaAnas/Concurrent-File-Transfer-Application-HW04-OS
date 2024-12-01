@@ -16,7 +16,7 @@ echo "Test 2: Small text file with 5 threads"
 
 # Test 3: Large text file with 10 threads
 echo "Test 3: Large text file with 10 threads"
-./client largefile.txt 10
+./client largefile.pptx 10
 
 # Test 4: Image file with 5 threads
 echo "Test 4: Image file with 5 threads"
@@ -24,7 +24,7 @@ echo "Test 4: Image file with 5 threads"
 
 # Test 5: Large image file with 10 threads
 echo "Test 5: Large image file with 10 threads"
-./client largeimage.jpg 10
+./client largeimage.png 10
 
 # Test 6: Small video file with 10 threads
 echo "Test 6: Small video file with 10 threads"
