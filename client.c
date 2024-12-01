@@ -1,144 +1,4 @@
-// #include <stdio.h>
-// #include <stdlib.h>
-// #include <string.h>
-// #include <sys/types.h>
-// #include <sys/socket.h>
-// #include <netdb.h>
-// #include <arpa/inet.h>
-// #include <ctype.h>
-// #include <unistd.h>
-// #include <errno.h>
-// #include <pthread.h>
-
-
-// #define KB_SIZE 1024  // Buffer size for receiving data
-// #define DEFAULT_PORT 8080
-
-// // Function prototypes
-// int connect_to_server(const char *ip, int port);
-// void receive_file(int sockfd, const char *output_filename);
-
-// // Main Function
-// int main(int argc, char *argv[]) {
-//     if (argc < 2) {
-//         fprintf(stderr, "Usage: %s <server_ip> [port]\n", argv[0]);
-//         exit(EXIT_FAILURE);
-//     }
-
-//     const char *server_ip = "127.0.0.1";
-//     int port = DEFAULT_PORT;
-
-//     // Connect to the server
-//     int sockfd = connect_to_server(server_ip, port);
-
-//     char * filename = argv[1];
-//     int num_threads = atoi(argv[2]);
-
-//     // Send the filename
-//     if (send(sockfd, filename, strlen(filename) + 1, 0) <= 0) { // Include null terminator
-//         perror("Failed to send filename");
-        
-   
-//     }
-//     close(sockfd);
-//     // Connect to the server
-//     sockfd = connect_to_server(server_ip, port);
-
-//     // Send the number of threads
-//     // printf("Sending number of threads: %d\n", num_threads);
-//     if (send(sockfd, &num_threads, sizeof(num_threads), 0) <= 0) {
-//         perror("Failed to send number of threads");
-
-//     }
-//     close(sockfd);
-//     // Connect to the server
-//     sockfd = connect_to_server(server_ip, port);
-
-//     char new_filename[63];
-//     snprintf(new_filename, sizeof(new_filename), "received_%s", filename);
-//     // Receive the file
-//     receive_file(sockfd, new_filename);
-
-//     // Close the connection
-//     close(sockfd);
-
-//     return 0;
-// }
-
-// // Connects to the server and returns the socket file descriptor
-// int connect_to_server(const char *ip, int port) {
-//     int sockfd;
-//     struct sockaddr_in server_address;
-
-//     sockfd = socket(AF_INET, SOCK_STREAM, 0);
-//     if (sockfd < 0) {
-//         perror("Socket creation failed");
-//         exit(EXIT_FAILURE);
-//     }
-
-//     server_address.sin_family = AF_INET;
-//     server_address.sin_port = htons(port);
-//     server_address.sin_addr.s_addr = inet_addr(ip);
-
-//     if (connect(sockfd, (struct sockaddr *)&server_address, sizeof(server_address)) < 0) {
-//         perror("Connection to server failed");
-//         close(sockfd);
-//         exit(EXIT_FAILURE);
-//     }
-
-//     // printf("Connected to server at %s:%d\n", ip, port);
-//     return sockfd;
-// }
-
-// // Receives a file from the server and saves it to the given output filename
-// void receive_file(int sockfd, const char *output_filename) {
-//     char buffer[KB_SIZE];
-//     long file_size = 0;
-//     long bytes_received = 0;
-
-//     // Receive the file size from the server
-//     if (recv(sockfd, &file_size, sizeof(file_size), 0) <= 0) {
-//         perror("Error receiving file size");
-//         exit(EXIT_FAILURE);
-//     }
-
-//     printf("Receiving file of size: %ld bytes\n", file_size);
-
-//     // Open the file for writing
-//     FILE *fp = fopen(output_filename, "wb");
-//     if (!fp) {
-//         perror("Error opening output file");
-//         exit(EXIT_FAILURE);
-//     }
-
-//     // Receive the file data in chunks
-//     while (bytes_received < file_size) {
-//         int chunk_size = recv(sockfd, buffer, KB_SIZE, 0);
-//         if (chunk_size < 0) {
-//             perror("Error receiving file data");
-//             fclose(fp);
-//             exit(EXIT_FAILURE);
-//         } else if (chunk_size == 0) {
-//             printf("Connection closed by server\n");
-//             break;
-//         }
-
-//         fwrite(buffer, 1, chunk_size, fp);
-//         bytes_received += chunk_size;
-
-//         printf("Progress: %ld/%ld bytes received\n", bytes_received, file_size);
-//     }
-
-//     fclose(fp);
-
-//     if (bytes_received == file_size) {
-//         printf("File received successfully and saved as %s\n", output_filename);
-//     } else {
-//         fprintf(stderr, "Warning: Incomplete file received (%ld/%ld bytes)\n", bytes_received, file_size);
-//     }
-// }
-
-
+#include <openssl/sha.h> 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -154,7 +14,8 @@
 
 int connect_to_server(const char *ip, int port);
 void send_filename(int sockfd, const char *filename);
-void receive_file(int sockfd, const char *output_filename);
+void receive_file(int sockfd, const char *output_filename, const char * old_filename);
+void compute_sha256(const char *filename, unsigned char *hash_output);
 
 int main(int argc, char *argv[]) {
     const char *server_ip = "127.0.0.1";
@@ -172,12 +33,14 @@ int main(int argc, char *argv[]) {
     num_threads = atoi(argv[2]);
    
     int sockfd = connect_to_server(server_ip, port);
-    printf("Old file name: %s\n", filename);
+
     send_filename(sockfd, filename);
     char new_filename[63];
     snprintf(new_filename, sizeof(new_filename), "out_%s", filename);
-    printf("New file name: %s\n", new_filename);
-    receive_file(sockfd, new_filename);  // Save file with out+filename
+
+
+
+    receive_file(sockfd, new_filename, filename);  // Save file with out+filename
 
     close(sockfd);
     return 0;
@@ -214,10 +77,50 @@ void send_filename(int sockfd, const char *filename) {
     }
 }
 
-void receive_file(int sockfd, const char *output_filename) {
+void compute_sha256(const char *filename, unsigned char *hash_output) {
+    FILE *file = fopen(filename, "rb");
+    if (!file) {
+        perror("Error opening file for hash computation");
+        return;
+    }
+
+    SHA256_CTX sha256;
+    SHA256_Init(&sha256);
+
+    unsigned char buffer[KB_SIZE];
+    size_t bytes_read;
+    while ((bytes_read = fread(buffer, 1, KB_SIZE, file)) > 0) {
+        SHA256_Update(&sha256, buffer, bytes_read);
+    }
+
+    SHA256_Final(hash_output, &sha256);
+    fclose(file);
+}
+
+void receive_file(int sockfd, const char *output_filename, const char* old_filename) {
     char buffer[KB_SIZE];
     long file_size = 0;
     long bytes_received = 0;
+
+
+        // Receive the hash from the server
+    unsigned char server_hash[SHA256_DIGEST_LENGTH];
+    if (recv(sockfd, server_hash, SHA256_DIGEST_LENGTH, 0) <= 0) {
+        perror("Error receiving file hash");
+        exit(EXIT_FAILURE);
+    }
+
+    // Compute the hash of the received file
+    unsigned char local_hash[SHA256_DIGEST_LENGTH];
+    compute_sha256(old_filename, local_hash);
+
+    // Compare the hashes
+    if (memcmp(server_hash, local_hash, SHA256_DIGEST_LENGTH) == 0) {
+        printf("File integrity verified: Hash matches.\n");
+    } else {
+        printf("File integrity check failed: Hash mismatch.\n");
+    }
+
 
     // Receive file size
     if (recv(sockfd, &file_size, sizeof(file_size), 0) <= 0) {
