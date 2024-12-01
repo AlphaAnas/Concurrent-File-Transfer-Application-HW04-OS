@@ -37,7 +37,7 @@ make client
 ---
 
 ### **Key Notes**
-- **Default Port:** The default port is `8080`. You can modify this in the [server.c][server.c] file.
+- **Default Port:** The default port is `8080`. You can modify this in the [server.c](server.c) file.
 - **Default IP Address:** The default IP address is `127.0.0.1` (localhost). This can be changed in the `client.c` file.
 
 ---
